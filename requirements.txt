@@ -1,0 +1,11 @@
+tkinter
+capstone
+ssdeep
+humanize
+pefile
+lief
+filetype
+tqdm
+pandas
+requests
+readline
