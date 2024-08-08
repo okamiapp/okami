@@ -308,8 +308,6 @@ def heuristic_based_detection(md, code, base_address):
         logger.error("No instructions found during heuristic-based detection.")
 
     return disassembly_output
-
-def run_okami_disassembler(filename):
     try:
         if not os.path.isfile(filename):
             logger.error(f"File not found: {filename}")
@@ -345,8 +343,6 @@ def run_okami_disassembler(filename):
     except Exception as e:
         logger.error(f"Error in disassembler function for {filename}: {e}")
         return [], filename, None, None, None, None, None
-
-def is_duplicate_sample(file_sha256):
     try:
         # Temporarily suppress error logging to console
         original_console_level = ch.level
@@ -367,6 +363,65 @@ def is_duplicate_sample(file_sha256):
     except Exception as e:
         logger.error(f"Error checking for duplicate sample: {e}")
         return False
+def run_okami_disassembler(filename):
+    try:
+        if not os.path.isfile(filename):
+            logger.error(f"File not found: {filename}")
+            return [], filename, None, None, None, None, None
+
+        file_sha256 = calculate_sha256(filename)
+
+        matching_filename = is_duplicate_sample(file_sha256)
+        if matching_filename:
+            logger.info(f"File '{filename}' is a duplicate. Skipping disassembly.")
+            print(f"The Provided Sample ({filename}) is a 100% match to ({matching_filename}).")
+            input("Press Enter to continue to the next file or return to the main menu.")
+            return [], filename, file_sha256, None, None, None, None
+
+        kind = filetype.guess(filename)
+        if kind is None:
+            logger.error(f"Cannot guess the file type for {filename}!")
+            return [], filename, file_sha256, None, None, None, None
+
+        disassembly_output = []
+        file_size = None
+        file_type = None
+        architecture = None
+        timestamp = None
+
+        if kind.extension == 'elf':
+            disassembly_output, file_size, file_type, architecture, timestamp, file_sha256 = process_elf_file(filename)
+        elif kind.extension == 'exe':
+            disassembly_output, file_size, file_type, architecture, timestamp, file_sha256 = process_pe_file(filename)
+        else:
+            logger.error(f"Unsupported binary format for disassembly for {filename}.")
+            return [], filename, file_sha256, None, None, None, None
+
+        return disassembly_output, filename, file_sha256, file_size, file_type, architecture, timestamp
+    except Exception as e:
+        logger.error(f"Error in disassembler function for {filename}: {e}")
+        return [], filename, None, None, None, None, None
+def is_duplicate_sample(file_sha256):
+    try:
+        # Temporarily suppress error logging to console
+        original_console_level = ch.level
+        ch.setLevel(logging.CRITICAL)
+
+        with sqlite3.connect(current_db) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT filename FROM file_hashes WHERE file_sha256 = ?', (file_sha256,))
+            row = cursor.fetchone()
+
+        # Restore original logging level to console
+        ch.setLevel(original_console_level)
+
+        if row:
+            return row[0]  # Return the matching filename
+        else:
+            return None
+    except Exception as e:
+        logger.error(f"Error checking for duplicate sample: {e}")
+        return None
 
 def analyze_and_add_samples():
     global current_db
