@@ -513,7 +513,6 @@ def fetch_unique_filenames(db_name):
     except Exception as e:
         logger.error(f"Error finding closest match: {e}")
         print(f"Error finding closest match: {e}")
-def find_closest_match(new_filename, db_name, new_file_sha256):
     try:
         with sqlite3.connect(db_name) as conn:
             cursor = conn.cursor()
@@ -563,6 +562,62 @@ def find_closest_match(new_filename, db_name, new_file_sha256):
     except Exception as e:
         logger.error(f"Error finding closest match: {e}")
         print(f"Error finding closest match: {e}")
+def find_closest_match(new_filename, db_name, new_file_sha256):
+    try:
+        with sqlite3.connect(db_name) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT filename, function_hash, file_sha256 FROM file_hashes')
+            rows = cursor.fetchall()
+
+        if not rows:
+            print(f"\nNo entries in the database to compare against for '{new_filename}'.\n")
+            return
+
+        df = pd.DataFrame(rows, columns=['filename', 'function_hash', 'file_sha256'])
+        grouped = df.groupby(['filename', 'file_sha256'])['function_hash'].apply(set).reset_index()
+
+        # Check if the file is already in the database
+        if (new_filename, new_file_sha256) in grouped[['filename', 'file_sha256']].values:
+            print(f"The Provided Sample ({new_filename}) is a 100% match to an existing file in the database.")
+            return
+
+        # Ensure there is a match before trying to access it
+        if grouped[(grouped['filename'] == new_filename) & (grouped['file_sha256'] == new_file_sha256)].empty:
+            print(f"\nNo similar files found for '{new_filename}'.\n")
+            return
+
+        new_file_hashes = grouped[(grouped['filename'] == new_filename) & (grouped['file_sha256'] == new_file_sha256)]['function_hash'].values[0]
+
+        similarity_records = []
+        for index, row in grouped.iterrows():
+            if row['filename'] == new_filename and row['file_sha256'] == new_file_sha256:
+                continue
+            filename = row['filename']
+            existing_hashes = row['function_hash']
+
+            common_hashes = len(new_file_hashes.intersection(existing_hashes))
+            total_hashes = len(new_file_hashes.union(existing_hashes))
+            similarity_percentage = (common_hashes / total_hashes) * 100 if total_hashes > 0 else 0
+
+            similarity_records.append({
+                'filename': filename,
+                'file_sha256': row['file_sha256'],
+                'common_hashes': common_hashes,
+                'similarity_percentage': similarity_percentage
+            })
+
+        similarity_df = pd.DataFrame(similarity_records)
+        if similarity_df.empty:
+            print(f"\nNo similar files found for '{new_filename}'.\n")
+        else:
+            closest_match = similarity_df.sort_values(by=['common_hashes', 'similarity_percentage'], ascending=False).iloc[0]
+            closest_match_filename = closest_match['filename']
+            closest_match_sha256 = closest_match['file_sha256']
+            virus_total_link = f"https://www.virustotal.com/gui/search/{closest_match_sha256}"
+            print(f"\n\nThe Provided Sample ({new_filename}) is most likely: '{closest_match_filename}' \nSimilarity: {closest_match['similarity_percentage']:.2f}% \nSHA256: {closest_match_sha256} \nVirusTotal: {virus_total_link} \n\n")
+    except Exception as e:
+        logger.error(f"Error finding closest match for '{new_filename}': {e}")
+        print(f"Error finding closest match for '{new_filename}': {e}")
 
 def get_file_sha256(filename, db_name):
     try:
