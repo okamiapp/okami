@@ -456,7 +456,8 @@ def fetch_unique_filenames(db_name):
             else:
                 print("No entries found in the database.")
     except Exception as e:
-        logger.error(f"Error fetching file hashes: {e}")
+        logger.error(f"Error fetching unique filenames: {e}")
+        print(f"Error fetching unique filenames: {e}")
 
 def find_closest_match(new_filename, db_name, new_file_sha256):
     try:
@@ -486,7 +487,7 @@ def find_closest_match(new_filename, db_name, new_file_sha256):
             existing_hashes = row['function_hash']
 
             common_hashes = len(new_file_hashes.intersection(existing_hashes))
-            total_hashes = len(new_file_hashes.union(existing_hashes))
+            total_hashes = len(new_file_hashes)  # Only count hashes in the new sample
             similarity_percentage = (common_hashes / total_hashes) * 100 if total_hashes > 0 else 0
 
             similarity_records.append({
@@ -584,7 +585,7 @@ def calculate_similarity(df, selected_filename, progress_callback=None):
         function_hash_set = row['function_hash']
 
         common_hashes = len(selected_set.intersection(function_hash_set))
-        total_hashes = len(selected_set.union(function_hash_set))
+        total_hashes = len(selected_set)
         similarity_percentage = (common_hashes / total_hashes) * 100 if total_hashes > 0 else 0
 
         similarity_records.append({
