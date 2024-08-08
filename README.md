@@ -48,7 +48,7 @@ Licensing: LGPL-2.1 license (GNU LESSER GENERAL PUBLIC LICENSE)
 Clone the repository or download the source code:
 
 ```bash
-git clone https://github.com/malienist/okami.git 
+git clone https://github.com/okamiapp/okami 
 cd okami-main 
 ```
 
