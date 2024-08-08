@@ -308,6 +308,8 @@ def heuristic_based_detection(md, code, base_address):
         logger.error("No instructions found during heuristic-based detection.")
 
     return disassembly_output
+
+def run_okami_disassembler(filename):
     try:
         if not os.path.isfile(filename):
             logger.error(f"File not found: {filename}")
@@ -343,19 +345,13 @@ def heuristic_based_detection(md, code, base_address):
     except Exception as e:
         logger.error(f"Error in disassembler function for {filename}: {e}")
         return [], filename, None, None, None, None, None
-    try:
-        # Temporarily suppress error logging to console
-        original_console_level = ch.level
-        ch.setLevel(logging.CRITICAL)
 
+def is_duplicate_sample(file_sha256):
+    try:
         with sqlite3.connect(current_db) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT file_sha256 FROM file_hashes WHERE file_sha256 = ?', (file_sha256,))
             row = cursor.fetchone()
-
-        # Restore original logging level to console
-        ch.setLevel(original_console_level)
-
         if row:
             return True
         else:
@@ -363,65 +359,6 @@ def heuristic_based_detection(md, code, base_address):
     except Exception as e:
         logger.error(f"Error checking for duplicate sample: {e}")
         return False
-def run_okami_disassembler(filename):
-    try:
-        if not os.path.isfile(filename):
-            logger.error(f"File not found: {filename}")
-            return [], filename, None, None, None, None, None
-
-        file_sha256 = calculate_sha256(filename)
-
-        matching_filename = is_duplicate_sample(file_sha256)
-        if matching_filename:
-            logger.info(f"File '{filename}' is a duplicate. Skipping disassembly.")
-            print(f"The Provided Sample ({filename}) is a 100% match to ({matching_filename}).")
-            input("Press Enter to continue to the next file or return to the main menu.")
-            return [], filename, file_sha256, None, None, None, None
-
-        kind = filetype.guess(filename)
-        if kind is None:
-            logger.error(f"Cannot guess the file type for {filename}!")
-            return [], filename, file_sha256, None, None, None, None
-
-        disassembly_output = []
-        file_size = None
-        file_type = None
-        architecture = None
-        timestamp = None
-
-        if kind.extension == 'elf':
-            disassembly_output, file_size, file_type, architecture, timestamp, file_sha256 = process_elf_file(filename)
-        elif kind.extension == 'exe':
-            disassembly_output, file_size, file_type, architecture, timestamp, file_sha256 = process_pe_file(filename)
-        else:
-            logger.error(f"Unsupported binary format for disassembly for {filename}.")
-            return [], filename, file_sha256, None, None, None, None
-
-        return disassembly_output, filename, file_sha256, file_size, file_type, architecture, timestamp
-    except Exception as e:
-        logger.error(f"Error in disassembler function for {filename}: {e}")
-        return [], filename, None, None, None, None, None
-def is_duplicate_sample(file_sha256):
-    try:
-        # Temporarily suppress error logging to console
-        original_console_level = ch.level
-        ch.setLevel(logging.CRITICAL)
-
-        with sqlite3.connect(current_db) as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT filename FROM file_hashes WHERE file_sha256 = ?', (file_sha256,))
-            row = cursor.fetchone()
-
-        # Restore original logging level to console
-        ch.setLevel(original_console_level)
-
-        if row:
-            return row[0]  # Return the matching filename
-        else:
-            return None
-    except Exception as e:
-        logger.error(f"Error checking for duplicate sample: {e}")
-        return None
 
 def analyze_and_add_samples():
     global current_db
@@ -447,7 +384,7 @@ def analyze_and_add_samples():
                 input("\nPress Enter to continue to the next file or return to the main menu.\n")
             elif file_sha256:
                 clear_console()
-                find_closest_match(os.path.basename(processed_filename), current_db, file_sha256)
+                print(f"The Provided Sample ({processed_filename}) is a 100% match to an existing file in the database.")
                 input("\nPress Enter to continue to the next file or return to the main menu.\n")
             else:
                 logger.error(f"Failed to analyze file: {processed_filename}")
@@ -535,13 +472,7 @@ def find_closest_match(new_filename, db_name, new_file_sha256):
         df = pd.DataFrame(rows, columns=['filename', 'function_hash', 'file_sha256'])
         grouped = df.groupby(['filename', 'file_sha256'])['function_hash'].apply(set).reset_index()
 
-        # Check if the file is already in the database
-        if (new_filename, new_file_sha256) in grouped[['filename', 'file_sha256']].values:
-            print(f"The Provided Sample ({new_filename}) is a 100% match to an existing file in the database.")
-            return
-
-        # Ensure there is a match before trying to access it
-        if grouped[(grouped['filename'] == new_filename) & (grouped['file_sha256'] == new_file_sha256)].empty:
+        if (new_filename, new_file_sha256) not in grouped[['filename', 'file_sha256']].values:
             print(f"\nNo similar files found for '{new_filename}'.\n")
             return
 
@@ -575,8 +506,8 @@ def find_closest_match(new_filename, db_name, new_file_sha256):
             virus_total_link = f"https://www.virustotal.com/gui/search/{closest_match_sha256}"
             print(f"\n\nThe Provided Sample ({new_filename}) is most likely: '{closest_match_filename}' \nSimilarity: {closest_match['similarity_percentage']:.2f}% \nSHA256: {closest_match_sha256} \nVirusTotal: {virus_total_link} \n\n")
     except Exception as e:
-        logger.error(f"Error finding closest match for '{new_filename}': {e}")
-        print(f"Error finding closest match for '{new_filename}': {e}")
+        logger.error(f"Error finding closest match: {e}")
+        print(f"Error finding closest match: {e}")
 
 def get_file_sha256(filename, db_name):
     try:
@@ -839,7 +770,8 @@ def advanced_menu():
         choice = input("\nPlease select an option (1, 2, 3, 4, 5, 6, 7):\n").strip()
 
         if choice == '1':
-            view_database_entries()
+            fetch_unique_filenames(current_db)
+            input("\nPress Enter to return to the main menu.")
         elif choice == '2':
             select_or_create_database()
         elif choice == '3':
@@ -903,10 +835,6 @@ def download_current_database():
         print(f"Database '{current_db}' is ready to be downloaded. Please find it in the current directory.")
     else:
         print("No database selected.")
-    input("\nPress Enter to return to the main menu.")
-
-def view_database_entries():
-    fetch_unique_filenames(current_db)
     input("\nPress Enter to return to the main menu.")
 
 def update_signatures():
@@ -989,41 +917,6 @@ def ensure_default_database():
         current_db = 'Okami.db'
         create_or_update_table(current_db)
         logger.info(f"Default database '{current_db}' created and loaded.")
-
-# Create or update table if needed
-def create_or_update_table(db_name):
-    try:
-        with sqlite3.connect(db_name) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS file_hashes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    filename TEXT,
-                    function_name TEXT,
-                    function_hash TEXT,
-                    file_size INTEGER,
-                    file_type TEXT,
-                    architecture TEXT,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    function_start INTEGER,
-                    function_end INTEGER,
-                    instruction_count INTEGER,
-                    function_size INTEGER,
-                    analysis_tool_version TEXT,
-                    analysis_notes TEXT,
-                    file_sha256 TEXT
-                )
-            ''')
-            cursor.execute("PRAGMA table_info(file_hashes)")
-            columns = [info[1] for info in cursor.fetchall()]
-            required_columns = ['filename', 'function_name', 'function_hash', 'file_size', 'file_type', 'architecture', 'timestamp', 'function_start', 'function_end', 'instruction_count', 'function_size', 'analysis_tool_version', 'analysis_notes', 'file_sha256']
-            for column in required_columns:
-                if column not in columns:
-                    cursor.execute(f'ALTER TABLE file_hashes ADD COLUMN {column} TEXT')
-            conn.commit()
-    except Exception as e:
-        logger.error(f"Error creating or updating table: {e}")
-        print(f"Error creating or updating table: {e}")
 
 # Start the application
 main_menu()
