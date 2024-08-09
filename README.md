@@ -1,5 +1,6 @@
 # ōkami
 ### Advanced Binary Fingerprinting for Malware Attribution and Code Re-use Detection 
+### Submit your samples here: https://github.com/okamiapp/okami/discussions/1 
 ![alt text](https://github.com/okamiapp/okami/blob/main/img/okami-logo.png)
 
 ## Overview
